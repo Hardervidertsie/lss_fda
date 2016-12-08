@@ -19,6 +19,9 @@ output: html_document
  f: fraction of data to be used for lowess smoothing, lowess is used for THpeaks. recommend 0.4-0.5
  timeInterval: time between consecutive frames, format "%H:%M:%S"
  aboveRegr : number of points that should be above regression line to identify as peak area)
+ basisType : fourier or spline, fourier for osicillatory data and spline for non oscillatory
+ slopeDomain : vector of two, first entry the start time - second entry the end time. format "%H:%M:%S. Average slope in this domain is returned
+ timeToTH: vector of two, first entry the value, second entry the type: 'relative' or 'absoluut'. returns either the time that the relative threshold value is reached or the time the absoluut value is reached. relative threshold: a fraction between 0 and 1 (0, 1) is defined as the maximum fitted value of the corresponding track * timeToTH. absoluut threshold is defined as the time the timeToTH value is reached
 
 ```{r data_prep }
 require(reshape2)
@@ -85,7 +88,8 @@ source('celloscillate.R')
 
 celloscillate(Frame = Frame, value = value,
                                             locationID = 'E01_1', timeInterval = '00:06:10',aboveRegr = 5,
-                                            plotFit = TRUE, plotDomains = TRUE, 
+                                         basisType = 'fourier',   plotFit = TRUE, plotDomains = TRUE, 
+               slopeDomain = NULL, timeToTH = NULL,
                            nbasis = 19, lambda = NULL, THpeaks = 0.1, f = 0.4)
 
 
@@ -96,7 +100,8 @@ celloscillate(Frame = Frame, value = value,
 
 output <- lapply(subsetdataL, function(x) celloscillate(x, Frame = x$variable, value = x$oscivalue, 
                                             locationID = x$location, aboveRegr = 5,timeInterval = '00:06:10',
-                                            plotFit = TRUE, plotDomains = TRUE, 
+                                            basisType = 'fourier',plotFit = TRUE, plotDomains = TRUE, 
+                                            slopeDomain = NULL, timeToTH = NULL,
                            nbasis = 19, lambda = NULL, THpeaks = 0.1, f = 0.4)) 
 
 

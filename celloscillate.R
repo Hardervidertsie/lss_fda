@@ -1,7 +1,7 @@
 
 
 celloscillate <- function(x, Frame = NULL, value = NULL, locationID = NULL, timeInterval = NULL, aboveRegr = 5,
-                           plotFit = FALSE, plotDomains = FALSE, 
+                          basisType = NULL, slopeDomain = NULL, timeToTH = NULL, plotFit = FALSE, plotDomains = FALSE, 
                            nbasis = 19, lambda = NULL, THpeaks = 0.1, f = 0.2) {
   
   if(!is.numeric(Frame)) {
@@ -35,26 +35,66 @@ celloscillate <- function(x, Frame = NULL, value = NULL, locationID = NULL, time
   ) && nchar(timeInterval) != 8 ){
     stop("provide timeInterval as \"HH:MM:SS\"")
   }
-    
+  if( is.null(basisType)){
+    stop('basisType must be fourier or spline')
+  }
+  if( !basisType %in% c('fourier', 'spline')) {
+    stop('basisType must be fourier or spline')
+  } 
+  
   if(any(as.integer(Frame) != Frame)){
   stop('Frame numbers must be integers or conversion to integer should be possible')
     }
-
+  
+  if(!is.null(slopeDomain) ) {
+   if(length(slopeDomain) != 2) {
+     stop('slopeDomain must be vector of length 2 with start and end time')
+   } 
+  }
+  if(!is.null(slopeDomain) ) { 
+     if(!any(
+       class(
+         strptime(slopeDomain, format = "%H:%M:%S")
+       ) %in% "POSIXlt"
+     ) || any(nchar(slopeDomain) != 8) ){
+       stop("provide slopeDomain as \"HH:MM:SS\"")
+     } 
+  }
+  
+  if(!is.null(timeToTH)) {
+    if(length(timeToTH) != 2) {
+      stop('timeToTH must be vector of length 2')
+    }
+    if(!is.numeric(as.numeric(timeToTH[1])) || as.numeric(timeToTH[1]) != timeToTH[1] ){
+      stop('First entry in timeToTH must be numeric')
+    }
+    if(!timeToTH[2] %in% c('relative', 'absoluut')){
+      stop('Second entry in timeToTH must be one of \"relative\", \"absoluut\"')
+    }
+    }     
+  
+  if(timeToTH[2] == 'relative' && (timeToTH[1] >= 1 | timeToTH[1] <= 0 )){
+    stop('relative timeToTH requires input between 0 and 1 ')
+  }
   
       Frame <- as.integer(Frame)
-    
-  timeBetweenFrames <- round(as.integer(strftime(strptime(timeInterval, format = "%H:%M:%S"), "%H")) + 
-                               1/60 * as.integer(strftime(strptime(timeInterval, 
-                                                                   format = "%H:%M:%S"), "%M")) +
-                               1/3600 * as.integer(strftime(strptime(timeInterval, 
-                                                                     format = "%H:%M:%S"), "%S"))
-                             , digit = 4 )
+      
+      
+  convertToHours <- function(x) {
+    round(as.integer(strftime(strptime(x, format = "%H:%M:%S"), "%H")) + 
+            1/60 * as.integer(strftime(strptime(x, 
+                                                format = "%H:%M:%S"), "%M")) +
+            1/3600 * as.integer(strftime(strptime(x, 
+                                                  format = "%H:%M:%S"), "%S"))
+          , digit = 4 )
+  }
+      
   
+  timeBetweenFrames <- convertToHours(timeInterval)
+  
+  slopeDomain <- sapply(slopeDomain, convertToHours)
   
   Frame <- Frame * timeBetweenFrames
-  
-  
-  
   
   # estimation of not-provided parameters
   if(is.null(lambda)){
@@ -65,8 +105,13 @@ celloscillate <- function(x, Frame = NULL, value = NULL, locationID = NULL, time
   # fit tracks
   
   rangval <- range(Frame)
+  
+  if(basisType == 'fourier'){
   period = max(rangval)
   basisfd = create.fourier.basis(rangval,nbasis, period = 2 * max(Frame) )
+  } else {
+    basisfd = create.bspline.basis(rangval, nbasis )
+  }
   datafdPar <- fdPar(basisfd, lambda = lambda) # smoothing
   datalist <- smooth.basis(Frame, value, datafdPar) ## data
   predictdata <- predict(newdata = Frame, datalist)
@@ -77,7 +122,7 @@ celloscillate <- function(x, Frame = NULL, value = NULL, locationID = NULL, time
   firstDeriv <- eval.fd( evalarg = inputArgs, fdobj = datalist$fd, Lfdobj = 1)
   secondDeriv <- eval.fd( evalarg = inputArgs, fdobj = datalist$fd, Lfdobj = 2)
   
-  residSD <- round( sum((predictdata - value)^2) / datalist$df, digits = 3)
+  residSD <- round( sum((predictdata - value)^2) / (nbasis+1), digits = 3)
   
   # plot fits
   
@@ -173,6 +218,22 @@ celloscillate <- function(x, Frame = NULL, value = NULL, locationID = NULL, time
   output$residSD <- residSD
   output$df <- datalist$df
   
+  if(!is.null(slopeDomain)){
+    output$slopeDomain <- myData[ inputArgs > slopeDomain[1]  & inputArgs < slopeDomain[2] , mean(firstDeriv)]
+  }
+  
+  if(!is.null(timeToTH)){
+    if(timeToTH[2] == 'relative' ){
+      relTH <- as.numeric(timeToTH[1]) * max(myData[,fitData])
+      ind <- min(which(myData$fitData >= relTH ))
+      output$timeToTH <- myData$inputArgs[ind]
+    } else {
+      ind <- min(which(myData$fitData >= as.numeric(timeToTH[1]) ))
+      output$timeToTH <- myData$inputArgs[ind]
+    }
+      }
+  
+
   # split data in seperate peaks to determine peak specific data
   # slopes of both sides of each peak & peak width
   
