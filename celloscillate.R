@@ -71,11 +71,12 @@ celloscillate <- function(x, Frame = NULL, value = NULL, locationID = NULL, time
     if(!timeToTH[2] %in% c('relative', 'absoluut')){
       stop('Second entry in timeToTH must be one of \"relative\", \"absoluut\"')
     }
+    if(timeToTH[2] == 'relative' && (timeToTH[1] >= 1 | timeToTH[1] <= 0 )){
+      stop('relative timeToTH requires input between 0 and 1 ')
+    }
     }     
   
-  if(timeToTH[2] == 'relative' && (timeToTH[1] >= 1 | timeToTH[1] <= 0 )){
-    stop('relative timeToTH requires input between 0 and 1 ')
-  }
+  
   
       Frame <- as.integer(Frame)
       
@@ -92,8 +93,9 @@ celloscillate <- function(x, Frame = NULL, value = NULL, locationID = NULL, time
   
   timeBetweenFrames <- convertToHours(timeInterval)
   
+  if(!is.null(slopeDomain)){
   slopeDomain <- sapply(slopeDomain, convertToHours)
-  
+  }
   Frame <- Frame * timeBetweenFrames
   
   # estimation of not-provided parameters

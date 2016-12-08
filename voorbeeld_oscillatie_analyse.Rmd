@@ -80,7 +80,7 @@ subsetdataL <- split(subsetdata, subsetdata$uniquelocationtrack) # turn into lis
 
 ```{r run_analysis }
 
-source('celloscillate.R')
+source('D:/src/lss_fda/celloscillate.R')
 
 # initilly; test the function with a single track;
 
@@ -100,8 +100,8 @@ celloscillate(Frame = Frame, value = value,
 
 output <- lapply(subsetdataL, function(x) celloscillate(x, Frame = x$variable, value = x$oscivalue, 
                                             locationID = x$location, aboveRegr = 5,timeInterval = '00:06:10',
-                                            basisType = 'fourier',plotFit = TRUE, plotDomains = TRUE, 
-                                            slopeDomain = NULL, timeToTH = NULL,
+                                            basisType = 'spline',plotFit = TRUE, plotDomains = TRUE, 
+                                            slopeDomain = c('00:00:00','02:00:00'), timeToTH = c(0.8, 'relative'),
                            nbasis = 19, lambda = NULL, THpeaks = 0.1, f = 0.4)) 
 
 
