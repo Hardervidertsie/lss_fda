@@ -1,0 +1,125 @@
+---
+title: "voorbeeld oscillatie analyse"
+author: "Steven Wink"
+date: "7 december 2016"
+output: html_document
+---
+
+ function that performs fourier transform using the fda package toolkit and extracts parameters of interest for in vitro cell biologists
+ data input: 
+  Frame: integer index of time series
+  value: measurement associated with tracked cell that oscillates.
+  locationID: name of time lapse location, which should hold unique track identifiers you perform the function over.
+
+
+ plotFit: plot your fits, only do this for a subset during calibration, because writing the pdfs takes alot of time
+ nbasis: number of basis functions, increase till smooth fit is obtained. At a certain point no improvement will be noticed.
+ lambda: smoothing factor for data. 0 is no smoothing
+ THpeaks: threshold value ratio of pred_peak - lowess(f) and median value, smaller values will not be defined as peaks.   
+ f: fraction of data to be used for lowess smoothing, lowess is used for THpeaks. recommend 0.4-0.5
+ timeInterval: time between consecutive frames, format "%H:%M:%S"
+ aboveRegr : number of points that should be above regression line to identify as peak area)
+
+```{r data_prep }
+require(reshape2)
+require(ggplot2)
+require(fda)
+require(data.table)
+
+datainput <- read.delim( file = "../data/reorderedTrackData.txt", sep ="\t")
+head(datainput)
+
+datainput$variable <- gsub("TP_", "", datainput$variable)
+datainput$variable <- as.numeric(as.character(datainput$variable))
+
+datainput <- datainput[datainput$.id %in% c('obj_shrunkenNuclei_Intensity_IntegratedIntensity_img_GFP', 'obj_cytoN_Intensity_IntegratedIntensity_img_GFP'),]
+
+head(datainput)
+cytoN <- datainput[ datainput$.id == 'obj_shrunkenNuclei_Intensity_IntegratedIntensity_img_GFP', ]
+shrNuclei <-  datainput[ datainput$.id == 'obj_cytoN_Intensity_IntegratedIntensity_img_GFP', ]
+
+cytoN <- as.data.table(cytoN)
+shrNuclei <- as.data.table(shrNuclei)
+setkeyv(cytoN, c('location', 'trackLabel', 'variable'))
+setkeyv(shrNuclei, c('location', 'trackLabel', 'variable'))
+datainput <- cytoN[shrNuclei]
+gc()
+
+datainput[ , c('mergeLocation', 'i.mergeLocation') := NULL]
+
+#ratioDampener(dampingFactor = c(0,0.1), nom = datainput[, value],
+#              denom = datainput[, i.value], ylim = c(0,15))
+
+datainput[ , oscivalue := value/ (i.value + 0.05*mean(i.value, na.rm=TRUE))]
+
+
+unique(datainput$location)
+
+Frame <- datainput[ datainput$location == "E02_1" & datainput$trackLabel == 8, c("variable")]
+value <- datainput[ datainput$location == "E02_1" & datainput$trackLabel == 8, c("oscivalue")]
+Frame <- Frame$variable # use this for testing a single track
+value <- value$oscivalue
+
+plot(Frame, value)
+
+# use with lapply/ sapply/ vapply over each locationID/trackID combo. input timeID and value
+subsetdata <- datainput[ datainput$location %in% c("E02_1", "C03_1", "G08_1", "D06_1") & datainput$trackLabel %in% 5:8,]
+subsetdata$uniquelocationtrack <- paste(subsetdata$location, subsetdata$trackLabel, sep ="_")
+subsetdata$location <- as.character(subsetdata$location)
+subsetdataL <- split(subsetdata, subsetdata$uniquelocationtrack) # turn into list for entries the unique tracks
+
+
+# and then full dataset..
+
+
+```
+
+
+```{r run_analysis }
+
+source('celloscillate.R')
+
+# initilly; test the function with a single track;
+
+
+
+celloscillate(Frame = Frame, value = value,
+                                            locationID = 'E01_1', timeInterval = '00:06:10',aboveRegr = 5,
+                                            plotFit = TRUE, plotDomains = TRUE, 
+                           nbasis = 19, lambda = NULL, THpeaks = 0.1, f = 0.4)
+
+
+
+# for callibration first test on subset and set plotting arguments to TRUE
+
+
+
+output <- lapply(subsetdataL, function(x) celloscillate(x, Frame = x$variable, value = x$oscivalue, 
+                                            locationID = x$location, aboveRegr = 5,timeInterval = '00:06:10',
+                                            plotFit = TRUE, plotDomains = TRUE, 
+                           nbasis = 19, lambda = NULL, THpeaks = 0.1, f = 0.4)) 
+
+
+names(output)
+names(output[[4]])
+
+# to extract for example all perpeak_peakwidths do
+ perpeak_widths <- lapply(output, '[[', 'perpeak_peakwidth' )
+# number of peaks ..
+ npeaks <- lapply(output, '[[', 'npeaks' )
+# etc
+
+ # extract data for certain location by e.g.
+ indG08 <- grepl("G08", names(perpeak_widths))
+
+ perpeak_widths[indG08]
+# population statistics of parameters e.g. 
+ quantile(unlist(perpeak_widths[indG08]))
+  
+
+# quaility control: remove too high resid SD, remove non-decreasing peaks, remove if no peaks.
+ # also check intensity of cytosol/ nuclei per track and remove based on too low intensity.
+ 
+ 
+
+```
