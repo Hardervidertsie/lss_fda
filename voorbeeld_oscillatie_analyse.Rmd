@@ -9,19 +9,26 @@ output: html_document
  data input: 
   Frame: integer index of time series
   value: measurement associated with tracked cell that oscillates.
-  locationID: name of time lapse location, which should hold unique track identifiers you perform the function over.
+  locationID: string uniquely identifying location and track number of time lapse location and track number, which should hold unique track identifiers you perform the function over.
 
 
  plotFit: plot your fits, only do this for a subset during calibration, because writing the pdfs takes alot of time
  nbasis: number of basis functions, increase till smooth fit is obtained. At a certain point no improvement will be noticed.
- lambda: smoothing factor for data. 0 is no smoothing
+ lambda: smoothing factor for data. 0 is no smoothing (default max(Frame)/50000) )
  THpeaks: threshold value ratio of pred_peak - lowess(f) and median value, smaller values will not be defined as peaks.   
- f: fraction of data to be used for lowess smoothing, lowess is used for THpeaks. recommend 0.4-0.5
+ f: fraction of data to be used for lowess smoothing, lowess is used for THpeaks. recommend 0.4-0.5. For noisy data increase (noise not id as peak). If lowess line follows fit too closely no maximal/ minima will be defined (also dependent on THpeaks.)
  timeInterval: time between consecutive frames, format "%H:%M:%S"
  aboveRegr : number of points that should be above regression line to identify as peak area)
  basisType : fourier or spline, fourier for osicillatory data and spline for non oscillatory
  slopeDomain : vector of two, first entry the start time - second entry the end time. format "%H:%M:%S. Average slope in this domain is returned
  timeToTH: vector of two, first entry the value, second entry the type: 'relative' or 'absoluut'. returns either the time that the relative threshold value is reached or the time the absoluut value is reached. relative threshold: a fraction between 0 and 1 (0, 1) is defined as the maximum fitted value of the corresponding track * timeToTH. absoluut threshold is defined as the time the timeToTH value is reached
+signal1 and signal2: extra data of same length as value and Frame, if provided mean is calculated (usefull for quality control)
+slopeTH: regions defined as low slope: first derive below value is defined as low slope. Low slope values are used to determine peak areas (together with local maxima). slopeTH increase will make yellow line gaps larger
+
+the plots: 
+a raw fitting plot with residual standard error  
+a plot that visualizes the influence of the various tuning paramters. black circles: raw data of track, Blue circle: peak, red circle: valley, yellow dots (zoom in): non-low-slope regions, black dots:regions where fit > lowess regression, black solid-fit line: the model fit, vertical black broken lines: on each side of such a line a defined peak area - but only if it contains a blue circle. These areas are used to determine per - peak measurements. 
+
 
 ```{r data_prep }
 require(reshape2)
@@ -29,8 +36,10 @@ require(ggplot2)
 require(fda)
 require(data.table)
 
-datainput <- read.delim( file = "../data/reorderedTrackData.txt", sep ="\t")
-head(datainput)
+# eerst repl2
+
+datainput <- read.delim( file = "repl2/reorderedTrackData.txt", sep ="\t")
+
 
 datainput$variable <- gsub("TP_", "", datainput$variable)
 datainput$variable <- as.numeric(as.character(datainput$variable))
@@ -46,28 +55,37 @@ shrNuclei <- as.data.table(shrNuclei)
 setkeyv(cytoN, c('location', 'trackLabel', 'variable'))
 setkeyv(shrNuclei, c('location', 'trackLabel', 'variable'))
 datainput <- cytoN[shrNuclei]
-gc()
+
 
 datainput[ , c('mergeLocation', 'i.mergeLocation') := NULL]
 
-#ratioDampener(dampingFactor = c(0,0.1), nom = datainput[, value],
-#              denom = datainput[, i.value], ylim = c(0,15))
+source('D://src/lss_fda/ratioDampener.R')
 
-datainput[ , oscivalue := value/ (i.value + 0.05*mean(i.value, na.rm=TRUE))]
+ratioDampener(dampingFactor = c(0,0.01), nom = datainput[, value],
+              denom = datainput[, i.value])
 
+datainput[ , oscivalue := value/ (i.value + 0.005*mean(i.value, na.rm=TRUE))]
 
 unique(datainput$location)
 
-Frame <- datainput[ datainput$location == "E02_1" & datainput$trackLabel == 8, c("variable")]
-value <- datainput[ datainput$location == "E02_1" & datainput$trackLabel == 8, c("oscivalue")]
+
+Frame <- datainput[ datainput$location == "C10_1" & datainput$trackLabel == 20, c("variable")]
+value <- datainput[ datainput$location == "C10_1" & datainput$trackLabel == 20, c("oscivalue")]
 Frame <- Frame$variable # use this for testing a single track
 value <- value$oscivalue
 
 plot(Frame, value)
 
 # use with lapply/ sapply/ vapply over each locationID/trackID combo. input timeID and value
-subsetdata <- datainput[ datainput$location %in% c("E02_1", "C03_1", "G08_1", "D06_1") & datainput$trackLabel %in% 5:8,]
+
+
+datainput[ , uniquelocationtrack:= paste(location, trackLabel, sep ="_")]
+selR <- sample(unique(datainput$uniquelocationtrack), 100)
+
+subsetdata <- datainput[ datainput$uniquelocationtrack %in% selR ,]
 subsetdata$uniquelocationtrack <- paste(subsetdata$location, subsetdata$trackLabel, sep ="_")
+
+
 subsetdata$location <- as.character(subsetdata$location)
 subsetdataL <- split(subsetdata, subsetdata$uniquelocationtrack) # turn into list for entries the unique tracks
 
@@ -75,6 +93,7 @@ subsetdataL <- split(subsetdata, subsetdata$uniquelocationtrack) # turn into lis
 # and then full dataset..
 
 
+datainputL <- split(datainput, datainput$uniquelocationtrack)
 ```
 
 
@@ -87,24 +106,55 @@ source('D:/src/lss_fda/celloscillate.R')
 
 
 celloscillate(Frame = Frame, value = value,
-                                            locationID = 'E01_1', timeInterval = '00:06:10',aboveRegr = 5,
-                                         basisType = 'fourier',   plotFit = TRUE, plotDomains = TRUE, 
+              locationID = 'E01_1', timeInterval = '00:06:10',aboveRegr = 5, suppresMaxFrames = 5,
+              slopeTH = 0.02,basisType = 'fourier',   plotFit = TRUE, plotDomains = TRUE, 
                slopeDomain = NULL, timeToTH = NULL,
-                           nbasis = 19, lambda = NULL, THpeaks = 0.1, f = 0.4)
-
+              nbasis = 19, lambda = NULL, THpeaks = 0.1, f = 0.4,
+               signal1 = NULL, signal2 = NULL)
+C10_1_20
 
 
 # for callibration first test on subset and set plotting arguments to TRUE
+# to ensure you perform a meaningull analysis, select a random subset of around 25-50 tracks of random treatments, optimize parameters, then observe what filter criteria should be used after the analysis to remain with the high quality tracks. 
+# make sure tracks are long enough and start early enough
+
+subsetdataL[[2]]
+
+table(unlist(lapply(subsetdataL, function(x) length(x$variable)))) # lengths of time
+
+(lapply(subsetdataL, function(x) (x$variable))) # many tracks start too late
 
 
+# keep tracks with 40 time points and starting at 1, 2 or 3
+indKeep <- unlist(lapply(subsetdataL, function(x) any((x$variable) %in% 1:3)))
+subsetdataL <- subsetdataL[ indKeep ]
 
-output <- lapply(subsetdataL, function(x) celloscillate(x, Frame = x$variable, value = x$oscivalue, 
-                                            locationID = x$location, aboveRegr = 5,timeInterval = '00:06:10',
-                                            basisType = 'spline',plotFit = TRUE, plotDomains = TRUE, 
+# keep tracks that are minimaly length 50
+indKeep <- unlist(lapply(subsetdataL, function(x) length(x$variable) > 49))
+sum(indKeep) # only 16 % of tracks remain
+subsetdataL <- subsetdataL[indKeep]
+length(subsetdataL)
+output <- lapply(subsetdataL, function(x) celloscillate(x, Frame = x$variable, value = x$oscivalue, suppresMaxFrames = 5,
+                                            locationID = x$uniquelocationtrack, aboveRegr = 5,timeInterval = '00:06:10',
+                                           slopeTH = 0.02, basisType = 'fourier',plotFit = TRUE, plotDomains = TRUE, 
                                             slopeDomain = c('00:00:00','02:00:00'), timeToTH = c(0.8, 'relative'),
-                           nbasis = 19, lambda = NULL, THpeaks = 0.1, f = 0.4)) 
+                           nbasis = 19, lambda = NULL, THpeaks = 0.1, f = 0.4,
+                           signal1 = x$value, signal2 = x$i.value)) 
 
 
+
+lapply(datainputL
+
+output <- lapply(datainputL, function(x) celloscillate(x, Frame = x$variable, value = x$oscivalue, suppresMaxFrames = 5,
+                                            locationID = x$uniquelocationtrack, aboveRegr = 5,timeInterval = '00:06:10',
+                                           slopeTH = 0.02, basisType = 'fourier',plotFit = FALSE, plotDomains = FALSE, 
+                                            slopeDomain = c('00:00:00','02:00:00'), timeToTH = c(0.8, 'relative'),
+                           nbasis = 19, lambda = NULL, THpeaks = 0.1, f = 0.4,
+                           signal1 = x$value, signal2 = x$i.value)) 
+
+
+
+# gaps are being closed incorrectly, use domains_F11_1_35
 names(output)
 names(output[[4]])
 

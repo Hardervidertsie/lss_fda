@@ -1,8 +1,8 @@
 
 
-celloscillate <- function(x, Frame = NULL, value = NULL, locationID = NULL, timeInterval = NULL, aboveRegr = 5,
-                          basisType = NULL, slopeDomain = NULL, timeToTH = NULL, plotFit = FALSE, plotDomains = FALSE, 
-                           nbasis = 19, lambda = NULL, THpeaks = 0.1, f = 0.2) {
+celloscillate <- function(x, Frame = NULL, value = NULL, locationID = NULL, timeInterval = NULL, aboveRegr = 5, suppresMaxFrames = 5,
+                          slopeTH = NULL, basisType = NULL, slopeDomain = NULL, timeToTH = NULL, plotFit = FALSE, plotDomains = FALSE, 
+                           nbasis = 19, lambda = NULL, THpeaks = 0.1, f = 0.2, signal1 = NULL, signal2 = NULL) {
   
   if(!is.numeric(Frame)) {
     stop("input Frame must be numeric")
@@ -24,6 +24,11 @@ celloscillate <- function(x, Frame = NULL, value = NULL, locationID = NULL, time
   }
   if(!THpeaks > 0) {
     stop('THpeaks not > 0')
+  }
+  if(!is.null(suppresMaxFrames)){
+    if(!is.numeric(suppresMaxFrames)){
+      stop('suppresMaxFrames not numeric')
+    }
   }
   if(!is.character(timeInterval)){
     stop("provide timeInterval as \"HH:MM:SS\"")
@@ -76,6 +81,22 @@ celloscillate <- function(x, Frame = NULL, value = NULL, locationID = NULL, time
     }
     }     
   
+  if(!is.null(signal1)){
+    if(length(signal1) != length(value)){
+      stop('signal1 should be equal length to value')
+    }
+  if(!is.numeric(signal1)){
+    stop('signal1 should be numeric')
+  }    
+  }
+  if(!is.null(signal2)){
+    if(length(signal2) != length(value)){
+      stop('signal2 should be equal length to value')
+    }
+    if(!is.numeric(signal2)){
+      stop('signal2 should be numeric')
+    }
+  }
   
   
       Frame <- as.integer(Frame)
@@ -153,7 +174,7 @@ celloscillate <- function(x, Frame = NULL, value = NULL, locationID = NULL, time
   
    # determine domains  
   
-  inputArgs <- seq(from = range(Frame)[1], to = range(Frame)[2], length.out = 500)
+  inputArgs <- seq(from = range(Frame)[1], to = range(Frame)[2], length.out = 1000)
   
   fitData <- eval.fd( evalarg = inputArgs, fdobj = datalist$fd, Lfdobj = 0)
   firstDeriv <- eval.fd( evalarg = inputArgs, fdobj = datalist$fd, Lfdobj = 1)
@@ -183,7 +204,7 @@ celloscillate <- function(x, Frame = NULL, value = NULL, locationID = NULL, time
   myData[ ((lowessfit - fitData)/ median(value)) < THpeaks  , localmin:= FALSE]
   
   # calculate peak width: from peak to next minima, and then determine when slope is low enough to define end of peak
-  slopeTH <- 0.02
+  
   myData[, lowSlope := FALSE]
   myData[ abs(firstDeriv) > slopeTH, lowSlope := TRUE]
   
@@ -192,10 +213,10 @@ celloscillate <- function(x, Frame = NULL, value = NULL, locationID = NULL, time
   
   myData[ fitData > lowessfit, peakArea := TRUE]
 
-  
-  
   # gather measurements based on all peaks
-  
+  output$timedomain <- range(Frame)
+  output$starttime <- min(Frame)
+  output$timelength <- max(Frame) - min(Frame)
   output$npeaks = sum(myData$localmax)
   output$peakheights = myData$fitData[myData$localmax == TRUE] 
   output$peaktimes = myData$inputArgs[myData$localmax == TRUE] 
@@ -234,40 +255,58 @@ celloscillate <- function(x, Frame = NULL, value = NULL, locationID = NULL, time
       output$timeToTH <- myData$inputArgs[ind]
     }
       }
-  
+  if(!is.null(signal1)){
+  output$meansignal1 <- mean(signal1)
+  } 
+  if(!is.null(signal2)){
+  output$meansignal2 <- mean(signal2)
+  }
 
   # split data in seperate peaks to determine peak specific data
   # slopes of both sides of each peak & peak width
   
-  # strategy: fill the gaps of the lowSlope around the local maxima
-  # then use the remaining gaps together with lowess line (peakArea) to identify the peaks
+  # strategy: fill the gaps of the lowSlope around the local maxima (because of higher certainty of peaks as compared to minima )
+  # then use the remaining gaps in lowSlope together with lowess line (peakArea) to identify the peaks (gaps are minima)
   # note that peakArea ensures regions being a peak
-  
+  # regions to fill gaps are determined in enfollowing while blocks
   indmax <- which(myData[ ,localmax] )
   indmin <- which(myData[ ,localmin] )
-  fp <- 10
-  while(any((indmax - fp) < 0) || any((indmax - fp) >= 500) ){ # no negative indexes and no out of boundary
-    fp <- fp - 1
-    if(fp == 1) break
-  }
+  fp <- suppresMaxFrames 
+  while(all((indmax - fp) > 0) && all((indmax + fp) < 1000) ){ # grow fill-vector untill out of boundary
+    fp <- fp + 1
+    }
+  
   indfill = vector()
+  
   for( i in seq_along(indmax)){
     indfill <- c(indfill, (indmax[i] - fp) : (indmax[i] + fp) )
   }
-  fp_old <- fp
-  while(any(indmin %in% indfill)) { # and no filling minima
+  
+  while(any(indmin %in% indfill)) { # no filling of minima allowed
     fp <- fp - 1
-    if(fp == 1) break
+    if(fp == suppresMaxFrames) break
     indfill = vector()
-    for( i in seq_along(indm)){
+    for( i in seq_along(indmax)){
+      
       indfill <- c(indfill, (indmax[i] - fp) : (indmax[i] + fp) )
+    
+      }
+  }
+  
+  while(sum(indmax %in% indfill) > length(indmax)) { # only one indmax filled per indmax entry
+    fp <- fp - 1
+    if(fp == suppresMaxFrames) break
+    indfill = vector()
+    for( i in seq_along(indmin)){
+      
+      indfill <- c(indfill, (indmax[i] - fp) : (indmax[i] + fp) )
+      
     }
   }
   
-  
     
   myData[ indfill  , lowSlope := TRUE ] # actual filling of peak lowSlope holes
-  
+  #myData[ indmin, ]
   myData[ lowSlope == TRUE & shift(lowSlope, type = 'lead', n = 1, fill = TRUE) == FALSE   , truefalse := 1] 
   myData[is.na(truefalse), truefalse := 0]
   myData[ , peakids := cumsum(truefalse)]
@@ -308,7 +347,17 @@ celloscillate <- function(x, Frame = NULL, value = NULL, locationID = NULL, time
       points( myData[peakArea== TRUE ,inputArgs], myData[peakArea == TRUE, rep(0.05, sum(myData$peakArea, na.rm=TRUE)) ], cex= 0.5)
       lines(myData$inputArgs, myData$lowessfit, lty = 2)
       abline( v = myData[truefalse != 0, inputArgs], lty = 4)
-    
+    if(!is.null(signal1)){
+      text( x = range(Frame)[2] - round(range(Frame)[2]/5, digits = 1)  , 
+            y = range(value)[2] - round(range(value)[2]/8, digits = 2), labels = 
+              paste('mean_signal1:', round(output$meansignal1, digits = 3) ) )
+    }
+      if(!is.null(signal2)){
+      text( x = range(Frame)[2] - round(range(Frame)[2]/5, digits = 1)  , 
+            y = range(value)[2] - round(range(value)[2]/4, digits = 2), labels = 
+              paste('mean_signal2:', round(output$meansignal2, digits = 3) ) )
+      }
+      
     dev.off()
   }
   
