@@ -2,7 +2,8 @@
 
 celloscillate <- function(x, Frame = NULL, value = NULL, locationID = NULL, timeInterval = NULL, aboveRegr = 5, suppresMaxFrames = 5,
                           slopeTH = NULL, basisType = NULL, slopeDomain = NULL, timeToTH = NULL, plotFit = FALSE, plotDomains = FALSE, 
-                           nbasis = 19, lambda = NULL, THpeaks = 0.1, f = 0.2, signal1 = NULL, signal2 = NULL) {
+                           nbasis = 19, lambda = NULL, THpeaks = 0.1, f = 0.2, signal1 = NULL, signal1TH = NULL, signal2 = NULL,
+                          xCoord = NULL, yCoord = NULL, pix.x = NULL, pix.y = NULL) {
   
   if(!is.numeric(Frame)) {
     stop("input Frame must be numeric")
@@ -97,6 +98,16 @@ celloscillate <- function(x, Frame = NULL, value = NULL, locationID = NULL, time
       stop('signal2 should be numeric')
     }
   }
+  if(!is.null( xCoord )& !is.null( yCoord) ) {
+   if(!is.numeric(xCoord) | !is.numeric(yCoord)){
+     stop('x and yCoord must be numeric')
+   }
+  
+    if(length(xCoord) != length(yCoord) | length(xCoord) != length(Frame)){
+      stop('Please provide equal x, yCoord and Frame lengths')
+    }  
+  }
+  
   
   
       Frame <- as.integer(Frame)
@@ -254,12 +265,24 @@ celloscillate <- function(x, Frame = NULL, value = NULL, locationID = NULL, time
       ind <- min(which(myData$fitData >= as.numeric(timeToTH[1]) ))
       output$timeToTH <- myData$inputArgs[ind]
     }
-      }
+  }
+  
+  
+  if(!is.null(signal1) & !is.null(signal1TH) & any(!is.na(signal1))){
+    
+      ind <- min(which(signal1 > as.numeric(signal1TH)))
+      output$timesignal1TH <- Frame[ind] # when is threshold reached.
+  } else{
+      output$timesignal1TH <- vector()
+    }
+  
+  
+  
   if(!is.null(signal1)){
-  output$meansignal1 <- mean(signal1)
+  output$meansignal1 <- mean(signal1, na.rm = TRUE)
   } 
   if(!is.null(signal2)){
-  output$meansignal2 <- mean(signal2)
+  output$meansignal2 <- mean(signal2, na.rm = TRUE)
   }
 
   # split data in seperate peaks to determine peak specific data
@@ -271,6 +294,7 @@ celloscillate <- function(x, Frame = NULL, value = NULL, locationID = NULL, time
   # regions to fill gaps are determined in enfollowing while blocks
   indmax <- which(myData[ ,localmax] )
   indmin <- which(myData[ ,localmin] )
+  if(length(indmax) !=0 & length(indmin) != 0){
   fp <- suppresMaxFrames 
   while(all((indmax - fp) > 0) && all((indmax + fp) < 1000) ){ # grow fill-vector untill out of boundary
     fp <- fp + 1
@@ -303,9 +327,11 @@ celloscillate <- function(x, Frame = NULL, value = NULL, locationID = NULL, time
       
     }
   }
-  
-    
   myData[ indfill  , lowSlope := TRUE ] # actual filling of peak lowSlope holes
+  output$fp <- fp # handy to check for out of ordinary values
+  } # end if statement  
+    
+  
   #myData[ indmin, ]
   myData[ lowSlope == TRUE & shift(lowSlope, type = 'lead', n = 1, fill = TRUE) == FALSE   , truefalse := 1] 
   myData[is.na(truefalse), truefalse := 0]
@@ -318,7 +344,7 @@ celloscillate <- function(x, Frame = NULL, value = NULL, locationID = NULL, time
   indKeep <- indKeep1 & indKeep2
   myDataPeaks <- myDataPeaks[indKeep]
   
-  output$fp <- fp # handy to check for out of ordinary values
+  
   output$nsplitpeaks <- length(myDataPeaks)
   
   output$perpeak_max <- sapply(myDataPeaks, function(x) max(x$fitData))
@@ -333,21 +359,42 @@ celloscillate <- function(x, Frame = NULL, value = NULL, locationID = NULL, time
   )
   output$locationID <- unique(locationID)
   
+  if( length(output$perpeak_max) != 0 ) {
   output$decreasing <- ifelse( all( unlist(output$perpeak_max) == rev(sort(unlist(output$perpeak_max)) )), 'yes', 'no')
-
+  } else{
+    output$decreasing <- ifelse( mean(myData$firstDeriv) < 0 , 'yes', 'no')
+}
   
   if(plotDomains){
-    pdf( file = paste0('celloscillate/plots/domains_', locationID, '.pdf') , height = 6, width = 6 )
-    
-      plot(x = Frame, value, xlab = 'time', ylim = (c(0, max(value))))
+    pdf( file = paste0('celloscillate/plots/domains_', locationID, '.pdf') , height = 12, width = 6 )
+    if(!is.null(xCoord)){
+    par(mfrow=c(2,1))
+    }
+    plot(x = Frame, value, xlab = 'time', ylim = (c(0, max(value))))
       lines(x = inputArgs, fitData)
       points( myData[localmax == TRUE, inputArgs],   myData[localmax == TRUE, fitData], cex = 5, col = 'blue')
       points( myData[localmin == TRUE, inputArgs],   myData[localmin == TRUE, fitData], cex = 5, col = 'red')
       points( myData[lowSlope== TRUE ,inputArgs], rep(0.06, sum(myData$lowSlope,na.rm = TRUE)) , col ="orange", cex = 0.5)
       points( myData[peakArea== TRUE ,inputArgs], myData[peakArea == TRUE, rep(0.05, sum(myData$peakArea, na.rm=TRUE)) ], cex= 0.5)
+      
+      if(!is.null(signal1)){
+      if(!any(is.na(signal1))){
+      points( Frame, signal1, col = 'pink')
+      }
+      }
+      
+      if(!is.null(signal2)){
+      if(!any(is.na(signal2))){
+        points( Frame, signal2, col = 'green')
+      }
+      }
+      
       lines(myData$inputArgs, myData$lowessfit, lty = 2)
+      
+      if(exists('truefalse', where = myData)){
       abline( v = myData[truefalse != 0, inputArgs], lty = 4)
-    if(!is.null(signal1)){
+      }
+      if(!is.null(signal1)){
       text( x = range(Frame)[2] - round(range(Frame)[2]/5, digits = 1)  , 
             y = range(value)[2] - round(range(value)[2]/8, digits = 2), labels = 
               paste('mean_signal1:', round(output$meansignal1, digits = 3) ) )
@@ -358,6 +405,11 @@ celloscillate <- function(x, Frame = NULL, value = NULL, locationID = NULL, time
               paste('mean_signal2:', round(output$meansignal2, digits = 3) ) )
       }
       
+      if(!is.null(xCoord)){
+      plot( x = xCoord, y = pix.y - yCoord, xlim = c(0, pix.x), ylim = c(0, pix.y), cex = 0.4)
+      text(x = xCoord + 5, y = yCoord + 5, round(Frame, digits = 0 ), cex = 0.4)  
+      legend( x = pix.x - 100, y = pix.y - 5)
+      }
     dev.off()
   }
   

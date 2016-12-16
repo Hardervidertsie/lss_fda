@@ -1,0 +1,214 @@
+---
+title: "voorbeeld oscillatie analyse"
+author: "Steven Wink"
+date: "7 december 2016"
+output: html_document
+---
+
+ function that fits fourier transform or spline basis functions using the fda package toolkit and extracts parameters of interest for in vitro cell biologists
+ data input: 
+  `Frame`: integer index of time series (frame numbers)  
+  `value`: measurement associated with tracked cell that oscillates.
+  `locationID`: string uniquely identifying location and track number of time lapse location and track number, which should hold unique track identifiers you perform the function over. 
+ `plotFit`: plot your fits, only do this for a subset during calibration, because writing the pdfs takes alot of time
+ `nbasis`: number of basis functions, increase till smooth fit is obtained. At a certain point no improvement will be noticed.
+ `lambda`: smoothing factor for data. 0 is no smoothing (default max(Frame)/50000) ) 
+ `THpeaks`: threshold value ratio of pred_peak - lowess(f) and median value, smaller values will not be defined as peaks. (basicly the fitted peaks should be above the lowess regression line)   
+ `f`: fraction of data to be used for lowess smoothing, lowess is used for THpeaks. recommend 0.4-0.5. For noisy data increase (noise not id as peak). If lowess line follows fit too closely no maximal/ minima will be defined (also dependent on THpeaks.)
+ `timeInterval`: time between consecutive frames, format "%H:%M:%S"
+ `aboveRegr` : number of points that should be above regression line to identify as peak area) - depcited in plots as thick black line
+ `basisType` : fourier or spline, fourier for osicillatory data and spline for non oscillatory
+ `slopeDomain` : vector of two, first entry the start time - second entry the end time. format "%H:%M:%S. Average slope in this domain is returned
+ `timeToTH`: vector of two, first entry the value, second entry the type: 'relative' or 'absoluut'. returns either the time that the relative threshold value is reached or the time the absoluut value is reached. relative threshold: a fraction between 0 and 1 (0, 1) is defined as the maximum fitted value of the corresponding track * timeToTH. absoluut threshold is defined as the time the timeToTH value is reached
+`signal1` and `signal2`: extra data of same length as value and Frame, if provided mean is calculated (usefull for quality control). 
+`signal1` can also be used together with `signal1TH` to return the time the `signal1TH` value is reached.
+`signal1TH`: threshold value : returns the time this value in `signal1` is reached.
+`slopeTH`: regions defined as low slope: first derive below value is defined as low slope. Low slope values are used to determine peak areas (together with local maxima). slopeTH increase will make yellow line gaps larger
+`xCoord` and `yCoord`: vectors same length as Frame and value, if provided the tracks will be plotted.
+`pix.x`and `pix.y`: resolution of images, needed for plotting tracks. Origin is top left.
+
+
+
+the plots: 
+a raw fitting plot with residual standard error  
+a plot that visualizes the influence of the various tuning paramters. black circles: raw data of track, Blue circle: peak, red circle: valley, yellow dots (zoom in): non-low-slope regions, black dots:regions where fit > lowess regression, black solid-fit line: the model fit, vertical black broken lines: on each side of such a line a defined peak area - but only if it contains a blue circle. These areas are used to determine per - peak measurements. 
+
+
+## TODO: nuclear and cytosol time courses stipjes in oscillatie  
+## TODO: validation with tracknumbers  
+## solution: x en y - coordinaten meegeven als argument, als meegegeven - dan mee plotten met domain plots.
+
+```{r data_prep }
+require(reshape2)
+require(ggplot2)
+require(fda)
+require(data.table)
+
+
+
+datainput <- fread( file = "reorderedTrackData20160107.txt", sep ="\t")
+
+
+datainput$variable <- gsub("TP_", "", datainput$variable)
+datainput$variable <- as.numeric(as.character(datainput$variable))
+
+
+datainput <- as.data.table(datainput)
+
+
+test <- data.frame(colA = 1:100, colB = 1:100, variable = sample(c("een", "twee"), 100, replace=T), value = runif(100))
+testw <- dcast( colA + colB  ~ variable , data = test)
+
+unique(datainput[ , .id])
+
+datainput <- datainput[.id %in% c('obj_cyto_only_Intensity_IntegratedIntensity_image_GFP',
+                                  'obj_final_PI_AreaShape_Area',
+                                  'obj_nuclei_Location_Center_X',
+                                  'obj_nuclei_Location_Center_Y'), ]
+datainput_w <- dcast( variable + location + trackLabel + treatment ~ .id, data = datainput)
+
+datainput_w <- as.data.table(datainput_w)
+
+
+#source('D://src/lss_fda/ratioDampener.R')
+
+#ratioDampener(dampingFactor = c(0,0.01), nom = datainput[, value],
+ #             denom = datainput[, i.value])
+
+#datainput[ , oscivalue := value/ (i.value + 0.005*mean(i.value, na.rm=TRUE))]
+
+unique(datainput$location)
+
+# to test a single track
+Frame <- datainput_w[ datainput_w$location == "B05_1" & datainput_w$trackLabel == 12, c("variable")]
+
+value <- datainput_w[ datainput_w$location == "B05_1" & datainput_w$trackLabel == 12, c("obj_cyto_only_Intensity_IntegratedIntensity_image_GFP")]
+
+
+xCoord <- datainput_w[ datainput_w$location == "B05_1" & datainput_w$trackLabel == 12, c("obj_nuclei_Location_Center_X")]
+yCoord <- datainput_w[ datainput_w$location == "B05_1" & datainput_w$trackLabel == 12, c("obj_nuclei_Location_Center_Y")]
+signal1 <- datainput_w[ datainput_w$location == "B05_1" & datainput_w$trackLabel == 12, c("obj_final_PI_AreaShape_Area")]
+
+
+
+
+Frame <- Frame$variable # use this for testing a single track
+value <- value$obj_cyto_only_Intensity_IntegratedIntensity_image_GFP
+xCoord <- xCoord$obj_nuclei_Location_Center_X
+yCoord <- yCoord$obj_nuclei_Location_Center_Y
+signal1 <- signal1$obj_final_PI_AreaShape_Area
+
+
+plot(Frame, value)
+
+# use with lapply/ sapply/ vapply over each locationID/trackID combo. input timeID and value
+
+
+datainput_w[ , uniquelocationtrack:= paste(location, treatment, trackLabel, sep ="_")]
+selR <- sample(unique(datainput_w$uniquelocationtrack), 100)
+
+subsetdata <- datainput_w[ datainput_w$uniquelocationtrack %in% selR ,]
+
+
+subsetdataL <- split(subsetdata, subsetdata$uniquelocationtrack) # turn into list for entries the unique tracks
+
+
+# and then full dataset..
+
+
+datainputL <- split(datainput, datainput$uniquelocationtrack)
+```
+
+
+```{r run_analysis }
+
+source('D:/src/lss_fda/celloscillate.R')
+
+# initilly; test the function with a single track;
+
+
+
+celloscillate(Frame = Frame, value = value,
+              locationID = 'E01_1', timeInterval = '01:34:10',aboveRegr = 5, suppresMaxFrames = 5,
+              slopeTH = 0.02,basisType = 'spline',   plotFit = TRUE, plotDomains = TRUE, 
+               slopeDomain = NULL, timeToTH = NULL,
+              nbasis = 11, lambda = 10, THpeaks = 0.1, f = 0.4,
+               signal1 = signal1, signal2 = NULL, signal1TH = 1, xCoord = xCoord, yCoord = yCoord, pix.x = 512, pix.y=512)
+
+
+
+
+
+C10_1_20
+
+
+# for callibration first test on subset and set plotting arguments to TRUE
+# to ensure you perform a meaningull analysis, select a random subset of around 25-50 tracks of random treatments, optimize parameters, then observe what filter criteria should be used after the analysis to remain with the high quality tracks. 
+# make sure tracks are long enough and start early enough
+
+subsetdataL[[2]]
+
+table(unlist(lapply(subsetdataL, function(x) length(x$variable)))) # lengths of time
+
+(lapply(subsetdataL, function(x) (x$variable))) # many tracks start too late
+
+
+# keep tracks with 40 time points and starting at 1, 2 or 3
+indKeep <- unlist(lapply(subsetdataL, function(x) any((x$variable) %in% 1:2)))
+
+subsetdataL <- subsetdataL[ indKeep ]
+
+# keep tracks that are minimaly length 50
+indKeep <- unlist(lapply(subsetdataL, function(x) length(x$variable) > 8))
+sum(indKeep) # 95 tracks remain
+subsetdataL <- subsetdataL[indKeep]
+
+
+length(subsetdataL)
+
+
+subsetdataL[[1]]
+output <- lapply(subsetdataL, function(x) celloscillate(x, Frame = x$variable, value = x$obj_cyto_only_Intensity_IntegratedIntensity_image_GFP, suppresMaxFrames = 5,
+                                            locationID = x$uniquelocationtrack, aboveRegr = 5,timeInterval = '01:06:10',
+                                           slopeTH = 0.02, basisType = 'spline',plotFit = TRUE, plotDomains = TRUE, 
+                                            slopeDomain = c('00:00:00','06:00:00'), timeToTH = c(0.8, 'relative'),
+                           nbasis = 11, lambda = 5, THpeaks = 0.1, f = 0.4,
+                           signal1 = x$obj_final_PI_AreaShape_Area, signal2 = NULL, signal1TH = 0.5, pix.x=512, pix.y=512 , xCoord = x$obj_nuclei_Location_Center_X, yCoord = x$obj_nuclei_Location_Center_Y)) 
+
+
+
+
+
+output <- lapply(datainputL, function(x) celloscillate(x, Frame = x$variable, value = x$oscivalue, suppresMaxFrames = 5,
+                                            locationID = x$uniquelocationtrack, aboveRegr = 5,timeInterval = '00:06:10',
+                                           slopeTH = 0.02, basisType = 'fourier',plotFit = FALSE, plotDomains = FALSE, 
+                                            slopeDomain = c('00:00:00','02:00:00'), timeToTH = c(0.8, 'relative'),
+                           nbasis = 19, lambda = NULL, THpeaks = 0.1, f = 0.4,
+                           signal1 = x$value, signal2 = x$i.value)) 
+
+
+
+# gaps are being closed incorrectly, use domains_F11_1_35
+names(output)
+names(output[[4]])
+
+# to extract for example all perpeak_peakwidths do
+ perpeak_widths <- lapply(output, '[[', 'perpeak_peakwidth' )
+# number of peaks ..
+ npeaks <- lapply(output, '[[', 'npeaks' )
+# etc
+
+ # extract data for certain location by e.g.
+ indG08 <- grepl("G08", names(perpeak_widths))
+
+ perpeak_widths[indG08]
+# population statistics of parameters e.g. 
+ quantile(unlist(perpeak_widths[indG08]))
+  
+
+# quaility control: remove too high resid SD, remove non-decreasing peaks, remove if no peaks.
+ # also check intensity of cytosol/ nuclei per track and remove based on too low intensity.
+ 
+ 
+
+```
