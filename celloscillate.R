@@ -351,6 +351,7 @@ celloscillate <- function(x, Frame = NULL, value = NULL, locationID = NULL, time
   output$perpeak_maxslope <- sapply(myDataPeaks, function(x) max(x$firstDeriv))
   output$perpeak_minslope <- sapply(myDataPeaks, function(x) min(x$firstDeriv))
   output$perpeak_peakwidth <- sapply(myDataPeaks, function(x) sum(x$lowSlope))
+  output$perpeak_peakwidth <- output$perpeak_peakwidth * output$timedomain[2]/ 1000
   output$perpeak_skew <- sapply(myDataPeaks, function(x) {
     left_dT <- x$inputArgs[x$localmax] - min(x$inputArgs)
     right_dT <- max(x$inputArgs) -  x$inputArgs[x$localmax]
@@ -370,24 +371,16 @@ celloscillate <- function(x, Frame = NULL, value = NULL, locationID = NULL, time
     if(!is.null(xCoord)){
     par(mfrow=c(2,1))
     }
-    plot(x = Frame, value, xlab = 'time', ylim = (c(0, max(value))))
+    if(!is.null(xCoord) & !is.null(signal1)){
+      par(mfrow = c(3,1))
+    }
+    plot(x = Frame, value, xlab = 'time', ylim = c(0, max(value)))
       lines(x = inputArgs, fitData)
       points( myData[localmax == TRUE, inputArgs],   myData[localmax == TRUE, fitData], cex = 5, col = 'blue')
       points( myData[localmin == TRUE, inputArgs],   myData[localmin == TRUE, fitData], cex = 5, col = 'red')
       points( myData[lowSlope== TRUE ,inputArgs], rep(0.06, sum(myData$lowSlope,na.rm = TRUE)) , col ="orange", cex = 0.5)
       points( myData[peakArea== TRUE ,inputArgs], myData[peakArea == TRUE, rep(0.05, sum(myData$peakArea, na.rm=TRUE)) ], cex= 0.5)
       
-      if(!is.null(signal1)){
-      if(!any(is.na(signal1))){
-      points( Frame, signal1, col = 'pink')
-      }
-      }
-      
-      if(!is.null(signal2)){
-      if(!any(is.na(signal2))){
-        points( Frame, signal2, col = 'green')
-      }
-      }
       
       lines(myData$inputArgs, myData$lowessfit, lty = 2)
       
@@ -406,15 +399,24 @@ celloscillate <- function(x, Frame = NULL, value = NULL, locationID = NULL, time
       }
       
       if(!is.null(xCoord)){
-      plot( x = xCoord, y = pix.y - yCoord, xlim = c(0, pix.x), ylim = c(0, pix.y), cex = 0.4)
-      text(x = xCoord + 5, y = yCoord + 5, round(Frame, digits = 0 ), cex = 0.4)  
-      legend( x = pix.x - 100, y = pix.y - 5)
+      plot( x = xCoord, y = pix.y - yCoord, xlim = c(0, pix.x), ylim = c(0, pix.y), cex = 0.2, pch = '.')
+      text(x = xCoord + 5, y = pix.y - yCoord + 5, round(Frame, digits = 0 ), cex = 0.2)  
+      
       }
+      
+      if(!is.null(signal1)){
+      plot(Frame, signal1, main = "signal1", col = "red", ylim = c(0, c(max(signal1, signal2))))
+        legend( legend = "signal1", x = Frame[1], y = max(signal1) - round(max(signal2)/10, digits= 0), pch= 1 , col = "red")
+      }
+      
+      if(!is.null(signal2)){
+      points(Frame, signal2, main = "signal2", col = "blue")
+        legend( legend = "signal2", x = Frame[1], y = max(signal2) - round(max(signal2)/12, digits= 0), pch= 1 , col = "blue")
+      }
+    
     dev.off()
   }
-  
-  
-  
+
   return(output)
   
 }
