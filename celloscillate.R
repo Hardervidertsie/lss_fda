@@ -1,10 +1,23 @@
 
 
-celloscillate <- function(x, Frame = NULL, value = NULL, locationID = NULL, timeInterval = NULL, aboveRegr = 5, suppresMaxFrames = 5,
+require(reshape2)
+require(ggplot2)
+require(fda)
+require(data.table)
+
+celloscillate <- function(x, Frame = NULL, keepFrameTime = FALSE, value = NULL, locationID = NULL, timeInterval = NULL, aboveRegr = 5, suppresMaxFrames = 5,
                           slopeTH = NULL, basisType = NULL, slopeDomain = NULL, timeToTH = NULL, plotFit = FALSE, plotDomains = FALSE, 
                            nbasis = 19, lambda = NULL, THpeaks = 0.1, f = 0.2, signal1 = NULL, signal1TH = NULL, signal2 = NULL,
-                          xCoord = NULL, yCoord = NULL, pix.x = NULL, pix.y = NULL) {
+                          xCoord = NULL, yCoord = NULL, pix.x = NULL, pix.y = NULL, ...) {
   
+ 
+  
+  if(any(is.na(c(value, Frame)))){
+    stop("NA in value or Frame not implemented")
+  }
+  if(!is.logical(keepFrameTime) ){
+    stop('keepFrameTime is not logical')
+  }
   if(!is.numeric(Frame)) {
     stop("input Frame must be numeric")
   }
@@ -31,15 +44,21 @@ celloscillate <- function(x, Frame = NULL, value = NULL, locationID = NULL, time
       stop('suppresMaxFrames not numeric')
     }
   }
-  if(!is.character(timeInterval)){
+  if( !keepFrameTime & is.null(timeInterval) ){
+    stop("provide timeInterval when KeepFrameTime is FALSE")
+  }
+  
+  if(!is.character(timeInterval) & !is.null(timeInterval)) {
     stop("provide timeInterval as \"HH:MM:SS\"")
   }
-  if(any(
-    class(
-      strptime(timeInterval, format = "%H:%M:%S")
-      ) %in% "POSIXlt"
-  ) && nchar(timeInterval) != 8 ){
-    stop("provide timeInterval as \"HH:MM:SS\"")
+  if(!is.null(timeInterval)){
+    if(any(
+      class(
+        strptime(timeInterval, format = "%H:%M:%S")
+        ) %in% "POSIXlt"
+    ) && nchar(timeInterval) != 8 ){
+      stop("provide timeInterval as \"HH:MM:SS\"")
+    }
   }
   if( is.null(basisType)){
     stop('basisType must be fourier or spline')
@@ -48,9 +67,11 @@ celloscillate <- function(x, Frame = NULL, value = NULL, locationID = NULL, time
     stop('basisType must be fourier or spline')
   } 
   
+  if(!keepFrameTime){
   if(any(as.integer(Frame) != Frame)){
   stop('Frame numbers must be integers or conversion to integer should be possible')
-    }
+  }
+  }
   
   if(!is.null(slopeDomain) ) {
    if(length(slopeDomain) != 2) {
@@ -108,11 +129,24 @@ celloscillate <- function(x, Frame = NULL, value = NULL, locationID = NULL, time
     }  
   }
   
+  if(!is.null(c(pix.x, pix.y))){
+    if(!is.numeric(c(pix.x, pix.y))){
+      stop("pix.x and pix.y not numeric")
+    }
+  }
+   
+  if(!is.null(signal1TH)){
+    if(!is.numeric(signal1TH)){
+      stop("signal1TH not numeric")
+    }
+  } 
+  if(is.null(signal1) & !is.null(signal1TH)){
+    stop("signal1TH provided but not signal1")
+  }
   
   
-      Frame <- as.integer(Frame)
-      
-      
+  
+  
   convertToHours <- function(x) {
     round(as.integer(strftime(strptime(x, format = "%H:%M:%S"), "%H")) + 
             1/60 * as.integer(strftime(strptime(x, 
@@ -120,15 +154,23 @@ celloscillate <- function(x, Frame = NULL, value = NULL, locationID = NULL, time
             1/3600 * as.integer(strftime(strptime(x, 
                                                   format = "%H:%M:%S"), "%S"))
           , digit = 4 )
+    
   }
-      
   
-  timeBetweenFrames <- convertToHours(timeInterval)
+  
+  
+  if(!keepFrameTime){
+      Frame <- as.integer(Frame)
+      timeBetweenFrames <- convertToHours(timeInterval)
+      Frame <- Frame * timeBetweenFrames    
+    
+  }
+  
   
   if(!is.null(slopeDomain)){
   slopeDomain <- sapply(slopeDomain, convertToHours)
   }
-  Frame <- Frame * timeBetweenFrames
+  
   
   # estimation of not-provided parameters
   if(is.null(lambda)){
@@ -156,30 +198,23 @@ celloscillate <- function(x, Frame = NULL, value = NULL, locationID = NULL, time
   firstDeriv <- eval.fd( evalarg = inputArgs, fdobj = datalist$fd, Lfdobj = 1)
   secondDeriv <- eval.fd( evalarg = inputArgs, fdobj = datalist$fd, Lfdobj = 2)
   
-  residSD <- round( sum((predictdata - value)^2) / (nbasis+1), digits = 3)
+  residSD <-  sum((predictdata - value)^2) / (nbasis+1)
   
   # plot fits
   
   if(plotFit){
 
-    if(!file.exists('celloscillate')){
-      dir.create('celloscillate')
-    }
-    
-    if(!file.exists('celloscillate/plots')){
-      dir.create('celloscillate/plots')
-    }
     
     locationID <- unique(locationID)
-    pdf( file = paste0('celloscillate/plots/fit_', locationID, '.pdf') , height = 6, width = 6 )
+   # pdf( file = paste0('celloscillate/plots/fit_', locationID, '.pdf') , height = 6, width = 6 )
     
-      plot(Frame, value, main = "raw data + fourier fit")
+      plot(Frame, value, main = locationID, cex.main = 0.5,  ...)
       lines(datalist$fd)
-      text( x = range(Frame)[2] - round(range(Frame)[2]/10, digits = 1)  , 
+      text( x = range(Frame)[2] - round(range(Frame)[2]/7, digits = 1)  , 
             y = range(value)[2] - round(range(value)[2]/10, digits = 1), labels = 
-              paste('resiSD:', residSD) )
+              paste('resiSD:', residSD), cex = 0.5 )
     
-    dev.off()
+   # dev.off()
       
   }
   
@@ -262,18 +297,24 @@ celloscillate <- function(x, Frame = NULL, value = NULL, locationID = NULL, time
       ind <- min(which(myData$fitData >= relTH ))
       output$timeToTH <- myData$inputArgs[ind]
     } else {
-      ind <- min(which(myData$fitData >= as.numeric(timeToTH[1]) ))
-      output$timeToTH <- myData$inputArgs[ind]
+      if(any(myData$fitData >= as.numeric(timeToTH[1]))){
+        ind <- min(which(abs(myData$fitData) >= as.numeric(timeToTH[1]) ))
+        output$timeToTH <- myData$inputArgs[ind]
+      } else{
+        output$timeToTH <- NA
+      }
+      
     }
   }
   
   
-  if(!is.null(signal1) & !is.null(signal1TH) & any(!is.na(signal1))){
-    
-      ind <- min(which(signal1 > as.numeric(signal1TH)))
-      output$timesignal1TH <- Frame[ind] # when is threshold reached.
-  } else{
-      output$timesignal1TH <- vector()
+  if(!is.null(signal1) & !is.null(signal1TH) ){
+      if(any(signal1 > as.numeric(signal1TH))){
+        ind <- min(which(signal1 > as.numeric(signal1TH)))
+        output$timesignal1TH <- Frame[ind] # when is threshold reached.
+      }
+    } else{
+      output$timesignal1TH <- NA
     }
   
   
@@ -292,6 +333,7 @@ celloscillate <- function(x, Frame = NULL, value = NULL, locationID = NULL, time
   # then use the remaining gaps in lowSlope together with lowess line (peakArea) to identify the peaks (gaps are minima)
   # note that peakArea ensures regions being a peak
   # regions to fill gaps are determined in enfollowing while blocks
+ 
   indmax <- which(myData[ ,localmax] )
   indmin <- which(myData[ ,localmin] )
   if(length(indmax) !=0 & length(indmin) != 0){
@@ -344,8 +386,11 @@ celloscillate <- function(x, Frame = NULL, value = NULL, locationID = NULL, time
   indKeep <- indKeep1 & indKeep2
   myDataPeaks <- myDataPeaks[indKeep]
   
+  output$locationID <- unique(locationID)
   
   output$nsplitpeaks <- length(myDataPeaks)
+  
+  if(output$nsplitpeaks != 0 ){
   
   output$perpeak_max <- sapply(myDataPeaks, function(x) max(x$fitData))
   output$perpeak_maxslope <- sapply(myDataPeaks, function(x) max(x$firstDeriv))
@@ -358,7 +403,9 @@ celloscillate <- function(x, Frame = NULL, value = NULL, locationID = NULL, time
     right_dT / left_dT # equal = 1, right tailed( left slope steeper than right slope ) then > 1, left tailed then < 1
   }
   )
-  output$locationID <- unique(locationID)
+  
+  
+  
   
   if( length(output$perpeak_max) != 0 ) {
   output$decreasing <- ifelse( all( unlist(output$perpeak_max) == rev(sort(unlist(output$perpeak_max)) )), 'yes', 'no')
@@ -366,15 +413,35 @@ celloscillate <- function(x, Frame = NULL, value = NULL, locationID = NULL, time
     output$decreasing <- ifelse( mean(myData$firstDeriv) < 0 , 'yes', 'no')
 }
   
+  } else{ # if no peaks..
+  
+    output$perpeak_max <- NA
+    output$perpeak_maxslope <- NA
+    output$perpeak_minslope <- NA
+    
+    output$perpeak_peakwidth <- NA
+    output$perpeak_skew <- NA
+    output$decreasing <- NA
+    
+  }
+
+  
+  
+  
   if(plotDomains){
-    pdf( file = paste0('celloscillate/plots/domains_', locationID, '.pdf') , height = 12, width = 6 )
+    
+    if(!is.null(xCoord)){
+   # pdf( file = paste0('celloscillate/plots/domains_', locationID, '.pdf') , height = 12, width = 6 )
+    } else{
+    #  pdf( file = paste0('celloscillate/plots/domains_', locationID, '.pdf') , height = 6, width = 6 )
+    }
     if(!is.null(xCoord)){
     par(mfrow=c(2,1))
     }
     if(!is.null(xCoord) & !is.null(signal1)){
       par(mfrow = c(3,1))
     }
-    plot(x = Frame, value, xlab = 'time', ylim = c(0, max(value)))
+    plot(x = Frame, value, xlab = 'time', ylim = c(0, max(value)), main = locationID)
       lines(x = inputArgs, fitData)
       points( myData[localmax == TRUE, inputArgs],   myData[localmax == TRUE, fitData], cex = 5, col = 'blue')
       points( myData[localmin == TRUE, inputArgs],   myData[localmin == TRUE, fitData], cex = 5, col = 'red')
@@ -414,7 +481,7 @@ celloscillate <- function(x, Frame = NULL, value = NULL, locationID = NULL, time
         legend( legend = "signal2", x = Frame[1], y = max(signal2) - round(max(signal2)/12, digits= 0), pch= 1 , col = "blue")
       }
     
-    dev.off()
+  #  dev.off()
   }
 
   return(output)
