@@ -6,7 +6,7 @@ require(fda)
 require(data.table)
 
 celloscillate <- function(x, Frame = NULL, keepFrameTime = FALSE, value = NULL, locationID = NULL, timeInterval = NULL, aboveRegr = 5, suppresMaxFrames = 5,
-                          slopeTH = NULL, basisType = NULL, slopeDomain = NULL, timeToTH = NULL, maxValueTime = TRUE, plotFit = FALSE, plotDomains = FALSE, 
+                          slopeTH = NULL, basisType = NULL, slopeDomain = NULL,slopeDomain2 = NULL, timeToTH = NULL, maxValueTime = TRUE, plotFit = FALSE, plotDomains = FALSE, 
                            nbasis = 19, lambda = NULL, THpeaks = 0.1, f = 0.2, signal1 = NULL, signal1TH = NULL, signal2 = NULL,
                           xCoord = NULL, yCoord = NULL, pix.x = NULL, pix.y = NULL, ...) {
   
@@ -288,18 +288,25 @@ celloscillate <- function(x, Frame = NULL, keepFrameTime = FALSE, value = NULL, 
     output$maxslope <- min(myData$firstDeriv)
   }
   
+  
   output$minslope <- min(myData$firstDeriv)
   output$maxvalue <- max(value)
-  output$maxValueTime <- Frame[which(value == max(value))]
+  indmax <- min(which(value == max(value)))
+  output$maxValueTime <- Frame[indmax]
   output$minvalue <- min(value)
   output$maxfitvalue <- max(myData$fitData)
   output$minfitvalue <- min(myData$fitData)
+  output$valueStart <- value[1]
+  output$valueEnd <- value[length(value)]
   
   output$residSD <- residSD
   output$df <- datalist$df
   
   if(!is.null(slopeDomain)){
     output$slopeDomain <- myData[ inputArgs > slopeDomain[1]  & inputArgs < slopeDomain[2] , mean(firstDeriv)]
+  }
+  if(!is.null(slopeDomain2)){
+    output$slopeDomain2 <- myData[ inputArgs > slopeDomain2[1]  & inputArgs < slopeDomain2[2] , mean(firstDeriv)]
   }
   
   if(!is.null(timeToTH)){
