@@ -6,7 +6,7 @@ require(fda)
 require(data.table)
 
 celloscillate <- function(x, Frame = NULL, keepFrameTime = FALSE, value = NULL, locationID = NULL, timeInterval = NULL, aboveRegr = 5, suppresMaxFrames = 5,
-                          slopeTH = NULL, basisType = NULL, slopeDomain = NULL, timeToTH = NULL, plotFit = FALSE, plotDomains = FALSE, 
+                          slopeTH = NULL, basisType = NULL, slopeDomain = NULL, timeToTH = NULL, maxValueTime = TRUE, plotFit = FALSE, plotDomains = FALSE, 
                            nbasis = 19, lambda = NULL, THpeaks = 0.1, f = 0.2, signal1 = NULL, signal1TH = NULL, signal2 = NULL,
                           xCoord = NULL, yCoord = NULL, pix.x = NULL, pix.y = NULL, ...) {
   
@@ -60,6 +60,10 @@ celloscillate <- function(x, Frame = NULL, keepFrameTime = FALSE, value = NULL, 
       stop("provide timeInterval as \"HH:MM:SS\"")
     }
   }
+  if(!is.logical(maxValueTime)){
+    stop("maxValueTime not logical")
+  }
+  
   if( is.null(basisType)){
     stop('basisType must be fourier or spline')
   }
@@ -212,7 +216,7 @@ celloscillate <- function(x, Frame = NULL, keepFrameTime = FALSE, value = NULL, 
       lines(datalist$fd)
       text( x = range(Frame)[2] - round(range(Frame)[2]/7, digits = 1)  , 
             y = range(value)[2] - round(range(value)[2]/10, digits = 1), labels = 
-              paste('resiSD:', residSD), cex = 0.5 )
+              paste('resiSD:', residSD), cex = 0.5, xlab = "time[h]" )
     
    # dev.off()
       
@@ -277,9 +281,16 @@ celloscillate <- function(x, Frame = NULL, keepFrameTime = FALSE, value = NULL, 
   } else {
     output$peak34damp <- NA
   }
+  # max slope, return slope of max(abs(slope)
+  if( max(myData$firstDeriv) >= max(abs(myData$firstDeriv)) ){
   output$maxslope <- max(myData$firstDeriv)
+  } else {
+    output$maxslope <- min(myData$firstDeriv)
+  }
+  
   output$minslope <- min(myData$firstDeriv)
   output$maxvalue <- max(value)
+  output$maxValueTime <- Frame[which(value == max(value))]
   output$minvalue <- min(value)
   output$maxfitvalue <- max(myData$fitData)
   output$minfitvalue <- min(myData$fitData)
